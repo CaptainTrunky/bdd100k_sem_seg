@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 import random
+import functools
 
 from munch import Munch
 
@@ -32,33 +33,36 @@ ex.observers.append(MongoObserver.create())
 # writer = SummaryWriter(logdir='/home/sbykov/workspace/ml/runs/bdd')
 writer = None
 
-COLORMAP = np.array(
-    [
-        [255, 0, 0],
-        [0, 0, 0],
-        [0, 255, 0],
-        [0, 0, 255],
-        [128, 128, 0],
-        [128, 0, 128],
-        [0, 128, 128],
-        [128, 128, 128]
-    ], dtype=np.uint8
-)
+@functools.lru_cache(maxsize=1)
+def get_colormap(max_class_id=256):
+    colormap = np.zeros((max_class_id, 3), dtype=np.uint8)
+
+    colormap[0, :] = [255, 0, 0]
+    colormap[6, :] = [128, 128, 0]
+    colormap[11, :] = [0, 255, 0]
+    colormap[13, :] = [0, 0, 255]
+    colormap[14, :] = [0, 128, 128]
+    colormap[255, :] = [255, 255, 255] 
+
+    return colormap
+
 
 # ignore, moving car, parked car, person, semaphore, road
-VALID_MASK_IDS = {255, 13, 14, 11, 6, 0}
+VALID_MASK_IDS = {0, 6, 11, 13, 14, 255}
+
+EARLY_STOP = 20000
 
 
 @ex.config
 def ex_config():
-    root_path = Path('/home/sbykov/workspace/datasets/')
+    root_path = Path('/home/s-bykov/workspace/datasets')
 
     trainer_config = {
         'dataset_path': root_path / 'bdd100k' / 'seg',
         'device': 'cuda',
         'num_classes': 20,
-        'height': 224,
-        'width': 224,
+        'height': 256,
+        'width': 256,
         'num_epochs': 10,
         'learning_rate': 1e-4,
         'batch_size': 16,
@@ -142,6 +146,9 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
             acc += T.argmax(predict, dim=1).eq(labels).sum().item()
             total_samples += data.size(0)
 
+        if idx > EARLY_STOP:
+            break
+
     if writer:
         writer.add_scalar('train.accuracy', 100 * acc / total_samples, global_step=epoch)
         writer.add_scalar('train.cross_entropy', np.mean(losses), global_step=epoch)
@@ -176,6 +183,9 @@ def val_step(model, val_loader, criterion, epoch, logger):
             acc += masks.eq(labels).sum().item()
             total_samples += data.size(0)
 
+            if idx > EARLY_STOP:
+                break
+
     if writer:
         writer.add_scalar('val.accuracy', 100 * acc / total_samples, global_step=epoch)
     else:
@@ -184,9 +194,15 @@ def val_step(model, val_loader, criterion, epoch, logger):
 
         imgs = masks.detach().cpu().numpy()
 
+        colormap = get_colormap()
+        # dump colored images
         for i in range(3):
-            break
-            cv2.imwrite(f'./{epoch}_{i}.png', imgs[i, :, :].astype(np.uint8), [cv2.IMREAD_UNCHANGED])
+            img = imgs[i, :, :]
+
+            rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
+            colored_masks = np.hstack((rgb, colormap[img]))
+
+            cv2.imwrite(f'./images/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
 
     return np.mean(losses)
 
