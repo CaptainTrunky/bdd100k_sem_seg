@@ -2,8 +2,10 @@ import logging
 from pathlib import Path
 import tqdm
 
-from albumentations import Compose, Resize, HorizontalFlip, RandomCrop
-from albumentations.pytorch import ToTensor
+from albumentations import Compose, Resize, HorizontalFlip,\
+        RandomCrop, ToFloat, Normalize
+
+from albumentations.pytorch import ToTensor, ToTensorV2
 
 import cv2
 import numpy as np
@@ -13,12 +15,12 @@ logging.basicConfig(level=logging.INFO)
 
 
 def build_basic_transform(num_classes, width, height):
+    normalization = {'mean': (0.485, 0.456, 0.406), 'std': (0.229, 0.224, 0.225)}
+
     return Compose([
         RandomCrop(width=width, height=height),
-        ToTensor(
-            sigmoid=True, num_classes=num_classes,
-            normalize={'mean': (0.485, 0.456, 0.406), 'std': (0.229, 0.224, 0.225)}
-        )
+        Normalize(mean=normalization['mean'], std=normalization['std']),
+        ToTensorV2()
     ])
 
 
@@ -124,7 +126,7 @@ class BDDSemSegDataset(Dataset):
             raise RuntimeError(msg)
 
         img_path = self.dataset_path / 'images' / self.split / self.images[idx]
-        img = cv2.cvtColor(cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB).astype(np.uint8)
+        img = cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
 
         label_path = self.dataset_path / 'labels' / self.split / self.labels[idx]
         label = cv2.imread(label_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
