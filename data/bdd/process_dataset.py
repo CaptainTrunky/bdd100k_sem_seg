@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import cv2
+import numpy as np
 from  albumentations import Resize
 import tqdm
 
@@ -28,6 +29,8 @@ def main(args):
     if output.exists():
         raise RuntimeError(f'{output.as_posix()} already exists')
 
+    output.mkdir()
+
     images = root / 'images'
 
     if not images.exists() or not images.is_dir():
@@ -46,22 +49,31 @@ def main(args):
 
     output_labels.mkdir()
 
-    for img in tqdm.tqdm(images.iterdir()):
-        img_id = img.stem
+    for split in images.iterdir():
+        logging.info(f'cur split: {split.stem}')
 
-        label_id = img_id + '_train_id'
+        if split.is_file():
+            continue
 
-        label = cv2.imread((labels / label_id).as_posix(), cv2.IMREAD_UNCHANGED)
+        for img in tqdm.tqdm(list(split.iterdir())):
+            if not img.name.endswith('jpg'):
+                continue
 
-        for idx, valid_id in enumerate(args.valid_ids):
-            output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
+            img_id = img.stem
 
-            mask = (label == valid_id).astype(bool)
+            label_id = img_id + '_train_id.png'
+ 
+            label = cv2.imread((labels / split.stem / label_id).as_posix(), cv2.IMREAD_UNCHANGED)
+  
+            for idx, valid_id in enumerate(args.valid_ids):
+                output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
 
-            if np.any(mask):
-                output_label[mask] = idx
+                mask = (label == valid_id).astype(bool)
 
-         cv2.imwrite((output_labels / label_id).with_suffix('jpg').as_posix(), output_label, [cv2.IMREAD_UNCHANGED])
+                if np.any(mask):
+                    output_label[mask] = idx
+
+            cv2.imwrite((output_labels / split.stem / label_id).as_posix(), output_label, [cv2.IMREAD_UNCHANGED])
 
 
 if __name__ == '__main__':
@@ -76,6 +88,6 @@ if __name__ == '__main__':
 
     parser.add_argument('--output', type=str, default='./processed')
 
-    args = parse.parse_args()
+    args = parser.parse_args()
 
     main(args)
