@@ -14,9 +14,11 @@ import torch.optim as optim
 
 from data.bdd.bdd_sem_seg_dataset import init_dataloaders
 
+from metrics.generic import get_all_metrics
+
 from models.bdd.SemSeg import SemSeg as Model
 
-from utils import get_colormap
+from utils.vis import get_colormap
 
 from sacred import Experiment
 from sacred.observers import MongoObserver
@@ -33,14 +35,21 @@ ex.observers.append(MongoObserver.create())
 writer = None
 
 # ignore, moving car, parked car, person, semaphore, road
-VALID_MASK_IDS = {0, 6, 11, 13, 14, 255}
+VALID_MASK_IDS = {
+    0: 'road',
+    1: 'sidewalk',
+    6: 'semaphore',
+    11: 'person',
+    13: 'car',
+    15: 'pickup'
+}
 
-EARLY_STOP = 20000
+EARLY_STOP = 2
 
 
 @ex.config
 def ex_config():
-    root_path = Path('/home/s-bykov/workspace/datasets')
+    root_path = Path('/home/sbykov/workspace/datasets')
 
     trainer_config = {
         'dataset_path': root_path / 'bdd100k' / 'seg',
@@ -48,7 +57,7 @@ def ex_config():
         'num_classes': 20,
         'height': 256,
         'width': 256,
-        'num_epochs': 10,
+        'epochs': 10,
         'learning_rate': 1e-4,
         'batch_size': 16,
         'shuffle': True
@@ -80,7 +89,7 @@ def train(config, loaders):
 
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25)
 
-    main_bar = tqdm.tqdm(range(1, config.num_epochs + 1), desc='epoch')
+    main_bar = tqdm.tqdm(range(1, config.epochs + 1), desc='epoch')
     for epoch in main_bar:
         train_loss = train_epoch(model, optimizer, criterion, train_loader, epoch, logger)
         val_loss = val_step(model, val_loader, criterion, epoch, logger)
@@ -106,7 +115,6 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
 
     losses = []
     acc = 0
-    total_samples = 0
     loss = None
 
     device = next(model.parameters()).device
@@ -119,7 +127,8 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
 
         loss = criterion(input=predict, target=labels)
 
-        losses.append(loss.mean().item())
+        with T.no_grad():
+            losses.append(loss.mean().item())
 
         optimizer.zero_grad()
 
@@ -127,18 +136,12 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
 
         optimizer.step()
 
-        with T.no_grad():
-            acc += T.argmax(predict, dim=1).eq(labels).sum().item()
-            total_samples += data.size(0)
-
         if idx > EARLY_STOP:
             break
 
     if writer:
-        writer.add_scalar('train.accuracy', 100 * acc / total_samples, global_step=epoch)
         writer.add_scalar('train.cross_entropy', np.mean(losses), global_step=epoch)
     else:
-        logger.log_scalar('train.accuracy', 100 * acc / total_samples)
         logger.log_scalar('train.cross_entropy', np.mean(losses))
 
     return np.mean(losses)
@@ -148,10 +151,11 @@ def val_step(model, val_loader, criterion, epoch, logger):
     model.eval()
 
     losses = []
-    acc = 0
-    total_samples = 0
 
     device = next(model.parameters()).device
+
+    metrics = get_all_metrics()
+    metrics_values = dict()
 
     with T.no_grad():
         for idx, batch in enumerate(tqdm.tqdm(val_loader, desc='val')):
@@ -165,8 +169,21 @@ def val_step(model, val_loader, criterion, epoch, logger):
             losses.append(loss.mean().item())
 
             masks = T.argmax(predict, dim=1)
-            acc += masks.eq(labels).sum().item()
-            total_samples += data.size(0)
+    
+            for label_id, label_name in VALID_MASK_IDS.items():
+                for name, metric in metrics.items():
+                    val = metric.compute(
+                        np.expand_dims(masks.cpu().numpy(), 1),
+                        np.expand_dims(labels.cpu().numpy(), 1),
+                        label_id
+                    )
+
+                    metric_name = f'{name}_{label_name}'
+
+                    if metric_name not in metrics_values:
+                        metrics_values[metric_name] = [val]
+                    else:
+                        metrics_values[metric_name].append(val)
 
             if idx > EARLY_STOP:
                 break
@@ -175,7 +192,9 @@ def val_step(model, val_loader, criterion, epoch, logger):
         writer.add_scalar('val.accuracy', 100 * acc / total_samples, global_step=epoch)
     else:
         logger.log_scalar('val.cross_entropy', np.mean(losses))
-        logger.log_scalar('val.accuracy', 100 * acc / total_samples)
+
+        for metric_name, vals in metrics_values.items():
+            logger.log_scalar(f'test.{metric_name}', np.mean(val))
 
         imgs = masks.detach().cpu().numpy()
 

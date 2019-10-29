@@ -1,3 +1,4 @@
+from functools import lru_cache
 import numpy as np
 
 
@@ -32,7 +33,7 @@ class Metric:
         tp_pred = (a != label).astype(bool)
         tp_label = (b == label).astype(bool)
  
-         return np.logical_and(tp_pred, tp_label)
+        return np.logical_and(tp_pred, tp_label)
 
     def compute(self, predict, labels, label):
         raise NotImplementedError()
@@ -49,12 +50,12 @@ class Precision(Metric):
 
     @staticmethod
     def compute(predict, labels, label):
-        _check_tensors(predict, labels)
+        Metric._check_tensors(predict, labels)
 
         tp = Metric._true_positive(predict, labels, label).sum().astype(np.float32)
         fp = Metric._false_positive(predict, labels, label).sum().astype(np.float32)
 
-        return tp / (tp + fp) if np.isclose(tp + fp, 0.0) else np.array(1, dtype=np.float32)
+        return 1.0 if np.isclose(tp + fp, 0.0) else tp / (tp + fp)
 
 
 class Recall(Metric):
@@ -63,12 +64,12 @@ class Recall(Metric):
 
     @staticmethod
     def compute(predict, labels, label):
-        _check_tensors(predict, labels)
+        Metric._check_tensors(predict, labels)
 
         tp = Metric._true_positive(predict, labels, label).sum().astype(np.float32)
         fn = Metric._false_negative(predict, labels, label).sum().astype(np.float32)
-       
-        return tp / (tp + fn) if np.isclose(tp + fn, 0.0) else np.array(1, dtype=np.float32)
+     
+        return 1.0 if np.isclose(tp + fn, 0.0) else tp / (tp + fn)
 
 
 class F1Score(Metric):
@@ -77,17 +78,17 @@ class F1Score(Metric):
 
     @staticmethod
     def compute(predict, labels, label):
-        _check_tensors(predict, labels)
+        Metric._check_tensors(predict, labels)
 
         prec = Precision.compute(predict, labels, label)
         recall = Recall.compute(predict, labels, label)
 
-        if np.isclose(prec + recall, 0):
-            score = 0
+        if np.isclose(prec + recall, 0.0):
+            score = 0.0
         else:
             score = 2 * prec * recall / (prec + recall)
 
-        return np.array(score, dtype=np.float32)
+        return score
 
 
 class IoUMetric(Metric):
@@ -95,7 +96,7 @@ class IoUMetric(Metric):
         super().__init__()
 
     def compute(self, predict, labels, label):
-        _check_tensors(predict, labels)
+        Metric._check_tensors(predict, labels)
 
         mask_predict = (predict == label).astype(bool)
         mask_label = (labels == label).astype(bool)
@@ -103,9 +104,20 @@ class IoUMetric(Metric):
         intersection = np.logical_and(mask_predict, mask_label).sum().astype(np.float32)
         union = np.logical_or(mask_predict, mask_label).sum().astype(np.float32)
 
-        if np.isclose(intersection):
-            score = 0
+        if np.isclose(intersection, 0.0):
+            score = 0.0
         else:
             score = intersection / union
 
-        return np.array(score, dtype=np.float32)
+        return score
+
+
+@lru_cache(maxsize=1)
+def get_all_metrics():
+    return {
+        'f1_score': F1Score(),
+        'precision': Precision(),
+        'recall' : Recall(),
+        'iou': IoUMetric()
+    }
+
