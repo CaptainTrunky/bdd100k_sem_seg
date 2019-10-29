@@ -74,6 +74,8 @@ def train(config, loaders):
 
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min')
+
     model.to(config.device)
 
     criterion = T.nn.CrossEntropyLoss(ignore_index=255).to(config.device)
@@ -87,12 +89,12 @@ def train(config, loaders):
     if not weights_path.exists():
         weights_path.mkdir()
 
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25)
-
     main_bar = tqdm.tqdm(range(1, config.epochs + 1), desc='epoch')
     for epoch in main_bar:
         train_loss = train_epoch(model, optimizer, criterion, train_loader, epoch, logger)
         val_loss = val_step(model, val_loader, criterion, epoch, logger)
+
+        scheduler.step()
 
         if epoch % 5 == 0:
             model_name = f"./best_model_{epoch}_{str(val_loss).replace('.', 'd')}.pth"
