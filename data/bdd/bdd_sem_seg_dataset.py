@@ -14,29 +14,36 @@ from torch.utils.data import Dataset, DataLoader
 logging.basicConfig(level=logging.INFO)
 
 
-def build_basic_transform(num_classes, width, height):
+def build_basic_transform():
     normalization = {'mean': (0.485, 0.456, 0.406), 'std': (0.229, 0.224, 0.225)}
 
     return Compose([
-        RandomCrop(width=width, height=height),
         Normalize(mean=normalization['mean'], std=normalization['std']),
         ToTensorV2()
     ])
 
 
-def build_augmentations(num_classes, width, height):
+def build_augmentations(width, height):
+    basic_block = build_basic_transform()
+
     train = Compose([
         HorizontalFlip(),
-        build_basic_transform(num_classes=num_classes, width=width, height=height)
+        RandomCrop(width=width, height=height),
+        basic_block
     ])
 
-    val = build_basic_transform(num_classes=num_classes, width=width, height=height)
+    val = Compose([
+        RandomCrop(width=width, height=height),
+        build_basic_transform()
+    ])
 
-    return {'train': train, 'val': val}
+    test = basic_block
+
+    return {'train': train, 'val': val, 'test': test}
 
 
 def init_dataloaders(config):
-    augmentations = build_augmentations(config.num_classes, config.width, config.height)
+    augmentations = build_augmentations(config.width, config.height)
 
     dataset_path = config.dataset_path
 
@@ -80,25 +87,17 @@ class BDDSemSegDataset(Dataset):
 
         self.split = kwargs['split']
 
-        images = self.dataset_path / 'images' / self.split
-        if not images.exists() or not images.is_dir():
-            raise RuntimeError(f'{images.as_posix()} is not valid')
+        self._load_samples()
 
-        self.images = [p for p in sorted(images.glob('*.jpg'))]
+        self._set_num_classes(kwargs)
 
-        labels = self.dataset_path / 'labels' / self.split
-        if not labels.exists() or not labels.is_dir():
-            raise RuntimeError(f'{labels.as_posix()} is not valid')
+        logging.info(f'{self.split}: got {len(self.images)} images, {self.num_classes} classes')
 
-        self.labels = [p for p in sorted(labels.glob('*.png'))]
+        self.transform = kwargs['transform']
 
-        if len(self.images) != len(self.labels):
-            msg = f'images num {len(self.images)} != '
-            msg += f'!= labels num {len(self.labels)}'
-
-            raise RuntimeError(msg)
-
+    def _set_num_classes(self, kwargs):
         self.num_classes = -1
+
         if kwargs['num_classes']:
             self.num_classes = kwargs['num_classes']
         else:
@@ -114,9 +113,29 @@ class BDDSemSegDataset(Dataset):
 
             self.num_classes = len(classes)
 
-        logging.info(f'{self.split}: got {len(self.images)} images, {self.num_classes} classes')
+    def _load_images(self):
+        images = self.dataset_path / 'images' / self.split
+        if not images.exists() or not images.is_dir():
+            raise RuntimeError(f'{images.as_posix()} is not valid')
 
-        self.transform = kwargs['transform']
+        self.images = [p for p in sorted(images.glob('*.jpg'))]
+
+    def _load_labels(self):
+        labels = self.dataset_path / 'labels' / self.split
+        if not labels.exists() or not labels.is_dir():
+            raise RuntimeError(f'{labels.as_posix()} is not valid')
+
+        self.labels = [p for p in sorted(labels.glob('*.png'))]
+
+    def _load_samples(self):
+        self._load_images()
+        self._load_labels()
+
+        if len(self.images) != len(self.labels):
+            msg = f'images num {len(self.images)} != '
+            msg += f'!= labels num {len(self.labels)}'
+
+            raise RuntimeError(msg)
 
     def __getitem__(self, idx):
         if self.images[idx].stem != self.labels[idx].stem.split('_')[0]:
@@ -138,6 +157,38 @@ class BDDSemSegDataset(Dataset):
             label = transformed['mask']
 
         return {'img': img, 'label': label}
+
+    def __len__(self):
+        return len(self.images)
+
+
+class BDDSemSegTestDataset(Dataset):
+    def __init__(self, **kwargs):
+        self.dataset_path = kwargs['dataset_path']
+        self.transform = kwargs['transform']
+
+        self._load_images()
+
+    def _load_images(self):
+        images = self.dataset_path
+
+        if not images.exists() or not images.is_dir():
+            raise RuntimeError(f'{images.as_posix()} is not valid')
+
+        self.images = [p for p in sorted(images.glob('*.jpg'))]
+
+        logging.info(f'Got {len(self.images)} images for testing')
+
+    def __getitem__(self, idx):
+        img_path = self.dataset_path / self.images[idx]
+        img = cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
+
+        if self.transform:
+            transformed = self.transform(image=img)
+
+            img = transformed['image']
+
+        return {'img': img, 'idx': idx}
 
     def __len__(self):
         return len(self.images)
