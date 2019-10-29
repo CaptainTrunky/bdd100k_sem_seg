@@ -5,9 +5,6 @@ import cv2
 import numpy as np
 
 import random
-import functools
-
-from munch import Munch
 
 import tqdm
 
@@ -18,6 +15,8 @@ import torch.optim as optim
 from data.bdd.bdd_sem_seg_dataset import init_dataloaders
 
 from models.bdd.SemSeg import SemSeg as Model
+
+from utils import get_colormap
 
 from sacred import Experiment
 from sacred.observers import MongoObserver
@@ -32,20 +31,6 @@ ex.observers.append(MongoObserver.create())
 
 # writer = SummaryWriter(logdir='/home/sbykov/workspace/ml/runs/bdd')
 writer = None
-
-@functools.lru_cache(maxsize=1)
-def get_colormap(max_class_id=256):
-    colormap = np.zeros((max_class_id, 3), dtype=np.uint8)
-
-    colormap[0, :] = [255, 0, 0]
-    colormap[6, :] = [128, 128, 0]
-    colormap[11, :] = [0, 255, 0]
-    colormap[13, :] = [0, 0, 255]
-    colormap[14, :] = [0, 128, 128]
-    colormap[255, :] = [255, 255, 255] 
-
-    return colormap
-
 
 # ignore, moving car, parked car, person, semaphore, road
 VALID_MASK_IDS = {0, 6, 11, 13, 14, 255}
@@ -219,6 +204,7 @@ def ex_main(_run, trainer_config):
 
     trainer_config['run'] = _run
 
+    from munch import Munch
     trainer_config = Munch(trainer_config)
 
     loaders = init_dataloaders(config=trainer_config)
