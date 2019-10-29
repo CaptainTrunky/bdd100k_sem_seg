@@ -2,27 +2,37 @@ import argparse
 import logging
 from pathlib import Path
 
+import cv2
+
 import tqdm
 
 import torch as T
+from torch.utils.data import DataLoader
+
+from models.bdd.SemSeg import SemSeg as Model
+
+from data.bdd.bdd_sem_seg_dataset import build_augmentations, BDDSemSegTestDataset
+
+from utils.vis import get_colormap
 
 
 def init_dataloader(path):
     if isinstance(path, str):
         path = Path(path)
 
-    augmentations = build_augmentations(num_classes=20, 256, 256)
+    augmentations = build_augmentations(width=256, height=256)
 
-    val_aug = augmentations['val']
+    test_aug = augmentations['test']
 
-    val_dataset = BDDSemSegDataset(
-        path=path, split='val', num_classes=config['num_classes'],
-        transform=val_aug
+    test_dataset = BDDSemSegTestDataset(
+        dataset_path=path, transform=test_aug
     )
 
-    val_loader = DataLoader(
-        val_dataset, batch_size=16, pin_memory=True
+    test_loader = DataLoader(
+        test_dataset, batch_size=16, pin_memory=True
     )
+
+    return test_loader
 
 
 def main(args):
@@ -34,17 +44,44 @@ def main(args):
 
     model.load_state_dict(T.load(args.checkpoint)['model_state_dict'])
 
-    model.to('cuda')
+    device = 'cpu'
+
+    model.to(device)
 
     model.eval()
 
+    colormap = get_colormap()
+
+    output = args.output
+
+    if isinstance(output, str):
+        output = Path(output)
+
+    if output.exists():
+        raise RuntimeError(f'{output.as_posix()} already exists')
+
+    output.mkdir()
+
     with T.no_grad():
         for idx, batch in enumerate(tqdm.tqdm(data_loader)):
-            data = batch['img'].to('cuda')
+            data = batch['img'].to(device)
 
             predict = model(data)['out']
 
             masks = T.argmax(predict, dim=1)
+
+            imgs = masks.detach().cpu().numpy()
+
+            indices = batch['idx']
+
+            for i in range(imgs.shape[0]):
+                img = colormap[imgs[i, :, :]]
+
+                p = data_loader.dataset.images[indices[i]]
+
+                cv2.imwrite((output / f'{p.name}').as_posix(), img, [cv2.IMREAD_UNCHANGED])
+
+            break
 
 
 if __name__ == '__main__':
