@@ -3,6 +3,10 @@ tensorboard
 opencv-python
 pymongo
 albumentations
+sacred
+tqdm
+numpy
+munch
 appdirs==1.4.3
 asn1crypto==0.24.0
 backcall==0.1.0
@@ -39,10 +43,8 @@ joblib==0.13.2
 jsonpickle==0.9.6
 MarkupSafe==1.1.1
 mleap==0.8.1
-munch==2.3.2
 nose==1.3.7
 nose-exclude==0.5.0
-numpy==1.15.4
 olefile==0.46
 packaging==19.0
 pandas==0.24.2
@@ -66,7 +68,6 @@ PyYAML==5.1
 querystring-parser==1.2.3
 requests==2.22.0
 s3transfer==0.2.0
-sacred==0.7.4
 scikit-learn==0.20.1
 scipy==1.1.0
 simplejson==3.16.0
@@ -75,8 +76,7 @@ smmap2==2.0.5
 sqlparse==0.3.0
 tabulate==0.8.3
 torch==1.1.0
-torchvision==0.3.0
-tqdm==4.32.2
+torchvision
 traitlets==4.3.2
 urllib3==1.24.3
 wcwidth==0.1.7
