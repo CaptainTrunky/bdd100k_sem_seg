@@ -15,3 +15,12 @@ def get_colormap(max_class_id=256):
     colormap[255, :] = [255, 255, 255] 
 
     return colormap
+
+def blend_rgb_with_mask(rgb, mask):
+    alpha = 0.4
+    beta = 1.0 - alpha
+    gamma = 0.0
+
+    blended = cv2.addWeighted(rgb, alpha, mask, beta, gamma)
+    
+    return blended
