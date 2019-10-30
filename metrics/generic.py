@@ -55,7 +55,7 @@ class Precision(Metric):
         tp = Metric._true_positive(predict, labels, label).sum().astype(np.float32)
         fp = Metric._false_positive(predict, labels, label).sum().astype(np.float32)
 
-        return 1.0 if np.isclose(tp + fp, 0.0) else tp / (tp + fp)
+        return 0.0 if np.isclose(tp + fp, 0.0) else tp / (tp + fp)
 
 
 class Recall(Metric):
@@ -69,7 +69,7 @@ class Recall(Metric):
         tp = Metric._true_positive(predict, labels, label).sum().astype(np.float32)
         fn = Metric._false_negative(predict, labels, label).sum().astype(np.float32)
      
-        return 1.0 if np.isclose(tp + fn, 0.0) else tp / (tp + fn)
+        return 0.0 if np.isclose(tp + fn, 0.0) else tp / (tp + fn)
 
 
 class F1Score(Metric):
