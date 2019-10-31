@@ -55,6 +55,17 @@ def main(args):
         if split.is_file():
             continue
 
+        if split.stem == 'test':
+            continue
+
+        output_images_split = output_images / split.stem
+
+        output_images_split.mkdir()
+
+        output_labels_split = output_labels / split.stem
+
+        output_labels_split.mkdir()
+
         for img in tqdm.tqdm(list(split.iterdir())):
             if not img.name.endswith('jpg'):
                 continue
@@ -65,15 +76,18 @@ def main(args):
  
             label = cv2.imread((labels / split.stem / label_id).as_posix(), cv2.IMREAD_UNCHANGED)
   
+            output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
             for idx, valid_id in enumerate(args.valid_ids):
-                output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
-
                 mask = (label == valid_id).astype(bool)
 
                 if np.any(mask):
                     output_label[mask] = idx
 
-            cv2.imwrite((output_labels / split.stem / label_id).as_posix(), output_label, [cv2.IMREAD_UNCHANGED])
+                if valid_id in args.merge_ids:
+                    output_label[mask] = args.merge_ids[0]
+
+            (output_images_split / img.name).write_bytes(img.read_bytes())
+            cv2.imwrite((output_labels_split / label_id).as_posix(), output_label, [cv2.IMREAD_UNCHANGED])
 
 
 if __name__ == '__main__':
@@ -81,10 +95,8 @@ if __name__ == '__main__':
 
     parser.add_argument('dataset_root', type=str)
 
-    parser.add_argument('width', type=int)
-    parser.add_argument('height', type=int)
-    
     parser.add_argument('valid_ids', type=int, nargs='+')
+    parser.add_argument('--merge_ids', type=int, nargs='+')
 
     parser.add_argument('--output', type=str, default='./processed')
 
