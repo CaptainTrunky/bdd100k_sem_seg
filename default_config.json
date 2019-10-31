@@ -1,0 +1,15 @@
+{
+    "trainer_config": { 
+        "dataset_path": "./processed",
+        "device": "cuda",
+        "num_classes": 8,
+        "height": 256,
+        "width": 256,
+        "epochs": 10,
+        "learning_rate": 1e-3,
+        "batch_size": 16,
+        "loss": "lovasz_softmax",
+        "resize_strategy": "crop",
+        "shuffle": true
+     }
+}
