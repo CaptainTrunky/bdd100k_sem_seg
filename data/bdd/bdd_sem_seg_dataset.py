@@ -3,7 +3,8 @@ from pathlib import Path
 import tqdm
 
 from albumentations import Compose, Resize, HorizontalFlip,\
-        RandomCrop, ToFloat, Normalize
+        RandomCrop, ToFloat, Normalize, RandomScale,\
+        RandomBrightnessContrast, OneOf, CropNonEmptyMaskIfExists
 
 from albumentations.pytorch import ToTensor, ToTensorV2
 
@@ -23,27 +24,34 @@ def build_basic_transform():
     ])
 
 
-def build_augmentations(width, height):
+def build_augmentations(width, height, resize_strategy):
     basic_block = build_basic_transform()
+
+    if resize_strategy == 'crop':
+        resize_strategy = RandomCrop(width=width, height=height)
+    else:
+        resize_strategy = Resize(width=width, height=height, interpolation=cv2.INTER_LINEAR)
 
     train = Compose([
         HorizontalFlip(),
-        RandomCrop(width=width, height=height),
+        RandomScale(),
+        RandomBrightnessContrast(),
+        resize_strategy,
         basic_block
     ])
 
     val = Compose([
-        RandomCrop(width=width, height=height),
+        resize_strategy,
         build_basic_transform()
     ])
 
-    test = basic_block
+    test = Compose([resize_strategy, basic_block])
 
     return {'train': train, 'val': val, 'test': test}
 
 
 def init_dataloaders(config):
-    augmentations = build_augmentations(config.width, config.height)
+    augmentations = build_augmentations(config.width, config.height, config.resize_strategy)
 
     dataset_path = config.dataset_path
 
@@ -144,10 +152,18 @@ class BDDSemSegDataset(Dataset):
 
             raise RuntimeError(msg)
 
-        img_path = self.dataset_path / 'images' / self.split / self.images[idx]
+        img_path = self.images[idx]
+
+        if not img_path.exists(): 
+            raise RuntimeError(f'failed to read {img_path.as_posix()}')
+
         img = cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
 
-        label_path = self.dataset_path / 'labels' / self.split / self.labels[idx]
+        label_path = self.labels[idx]
+
+        if not label_path.exists():
+            raise RuntimeError(f'failed to read {label_path.as_posix()}')
+
         label = cv2.imread(label_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
 
         if self.transform:
