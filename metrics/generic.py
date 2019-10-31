@@ -120,4 +120,3 @@ def get_all_metrics():
         'recall' : Recall(),
         'iou': IoUMetric()
     }
-
