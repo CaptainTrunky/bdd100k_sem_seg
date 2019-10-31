@@ -1,0 +1,6 @@
+[submodule "thirdparty/LovaszSoftmax"]
+	path = thirdparty/LovaszSoftmax
+	url = https://github.com/bermanmaxim/LovaszSoftmax
+[submodule "thirdparty/ranger"]
+	path = thirdparty/ranger
+	url = https://github.com/lessw2020/Ranger-Deep-Learning-Optimizer.git

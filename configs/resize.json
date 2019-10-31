@@ -1,0 +1,15 @@
+{
+    "trainer_config": { 
+        "dataset_path": "/home/sbykov/workspace/datasets/bdd100k/seg/",
+        "device": "cuda",
+        "num_classes": 8,
+        "height": 180,
+        "width": 360,
+        "epochs": 10,
+        "learning_rate": 1e-3,
+        "batch_size": 16,
+        "loss": "lovasz_softmax",
+        "resize_strategy": "resize",
+        "shuffle": true
+     }
+}

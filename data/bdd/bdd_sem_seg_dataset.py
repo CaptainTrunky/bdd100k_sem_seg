@@ -29,8 +29,10 @@ def build_augmentations(width, height, resize_strategy):
 
     if resize_strategy == 'crop':
         resize_strategy = RandomCrop(width=width, height=height)
+    elif resize_strategy == 'resize':
+        resize_strategy = Resize(width=width, height=height, interpolation=cv2.INTER_CUBIC)
     else:
-        resize_strategy = Resize(width=width, height=height, interpolation=cv2.INTER_LINEAR)
+        raise RuntimeError(f'Unknown resize strategy {resize_strategy}')
 
     train = Compose([
         HorizontalFlip(),

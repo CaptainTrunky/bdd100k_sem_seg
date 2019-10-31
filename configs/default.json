@@ -1,6 +1,6 @@
 {
     "trainer_config": { 
-        "dataset_path": "./processed",
+        "dataset_path": "/home/sbykov/workspace/datasets/bdd100k/seg/",
         "device": "cuda",
         "num_classes": 8,
         "height": 256,

@@ -38,25 +38,25 @@ ex.observers.append(MongoObserver.create())
 writer = None
 
 # ignore, moving car, parked car, person, semaphore, road
-#VALID_MASK_IDS = {
-#    0: 'road',
-#    1: 'sidewalk',
-#    6: 'semaphore',
-#    7: 'sign',
-#    11: 'person',
-#    13: 'car',
-#    14: 'truck',
-#    15: 'bus'
-#}
-
 VALID_MASK_IDS = {
     0: 'road',
     1: 'sidewalk',
-    2: 'semaphore',
-    3: 'sign',
-    4: 'person',
-    5: 'car'
+    6: 'semaphore',
+    7: 'sign',
+    11: 'person',
+    13: 'car',
+    14: 'truck',
+    15: 'bus'
 }
+
+#VALID_MASK_IDS = {
+#    0: 'road',
+#    1: 'sidewalk',
+#    2: 'semaphore',
+#    3: 'sign',
+#    4: 'person',
+#    5: 'car'
+#}
 
 
 @ex.config
@@ -225,17 +225,18 @@ def val_step(model, val_loader, criterion, epoch, logger):
         logging.info(f'test.mean_iou: {mean_ious}')
         logger.log_scalar('test.mean_iou', mean_ious)
 
-        imgs = masks.detach().cpu().numpy()
+        if False:
+            imgs = masks.detach().cpu().numpy()
 
-        colormap = get_colormap(len(VALID_MASK_IDS))
-        # dump colored images
-        for i in range(3):
-            img = imgs[i, :, :]
+            colormap = get_colormap(len(VALID_MASK_IDS))
+            # dump colored images
+            for i in range(3):
+                img = imgs[i, :, :]
 
-            rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
-            colored_masks = np.hstack((rgb, colormap[img]))
+                rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
+                colored_masks = np.hstack((rgb, colormap[img]))
 
-            cv2.imwrite(f'./images/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
+                cv2.imwrite(f'./images/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
 
     return np.mean(losses)
 
