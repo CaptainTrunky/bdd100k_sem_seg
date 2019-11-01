@@ -5,16 +5,22 @@ import numpy as np
 
 @functools.lru_cache(maxsize=1)
 def get_colormap(max_class_id=256):
-    colormap = np.zeros((max_class_id, 3), dtype=np.uint8)
+    palette = np.array(
+        [
+            [255, 255, 255], [255, 0, 0], [0, 255, 0],
+            [0, 0, 255], [255, 0, 255], [0, 255, 255],
+            [255, 255, 0], [128, 0, 0], [0, 128, 0],
+            [0, 0, 128], [128, 128, 0], [128, 0, 128],
+            [0, 128, 128], [128, 128, 128], [255, 128, 0],
+            [128, 255, 0], [255, 0, 128], [128, 0, 255],
+            [0, 255, 128], [0, 128, 255]
+        ], dtype=np.uint8
+    )
 
-    colormap[0, :] = [255, 0, 0]
-    colormap[6, :] = [128, 128, 0]
-    colormap[11, :] = [0, 255, 0]
-    colormap[13, :] = [0, 0, 255]
-    colormap[14, :] = [0, 128, 128]
-    colormap[255, :] = [255, 255, 255] 
+    indices = np.random.choice(range(palette.shape[0]), size=max_class_id, replace=False)
 
-    return colormap
+    return palette[indices, :]
+
 
 def blend_rgb_with_mask(rgb, mask):
     alpha = 0.4
