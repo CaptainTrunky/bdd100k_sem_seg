@@ -77,14 +77,20 @@ def main(args):
             label = cv2.imread((labels / split.stem / label_id).as_posix(), cv2.IMREAD_UNCHANGED)
   
             output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
+
+            merged_id = -1 
             for idx, valid_id in enumerate(args.valid_ids):
                 mask = (label == valid_id).astype(bool)
+
+                if merged_id == -1:
+                    if valid_id == args.merge_ids[0]:
+                        merged_id = idx
 
                 if np.any(mask):
                     output_label[mask] = idx
 
                 if valid_id in args.merge_ids:
-                    output_label[mask] = args.merge_ids[0]
+                    output_label[mask] = merged_id
 
             (output_images_split / img.name).write_bytes(img.read_bytes())
             cv2.imwrite((output_labels_split / label_id).as_posix(), output_label, [cv2.IMREAD_UNCHANGED])
