@@ -38,25 +38,24 @@ ex.observers.append(MongoObserver.create())
 writer = None
 
 # ignore, moving car, parked car, person, semaphore, road
-VALID_MASK_IDS = {
-    0: 'road',
-    1: 'sidewalk',
-    6: 'semaphore',
-    7: 'sign',
-    11: 'person',
-    13: 'car',
-    14: 'truck',
-    15: 'bus'
-}
-
 #VALID_MASK_IDS = {
 #    0: 'road',
 #    1: 'sidewalk',
-#    2: 'semaphore',
-#    3: 'sign',
-#    4: 'person',
-#    5: 'car'
+#    6: 'semaphore',
+#    7: 'sign',
+#    11: 'person',
+#    13: 'car',
+#    14: 'truck',
+#    15: 'bus'
 #}
+
+VALID_MASK_IDS = {
+    0: 'road',
+    1: 'semaphore',
+    2: 'sign',
+    3: 'person',
+    4: 'car'
+}
 
 
 @ex.config
@@ -90,15 +89,14 @@ def train(config, loaders):
 
     model.to(config.device)
 
-    #weights = T.ones(size=(config.num_classes,)).float()
-
-    #for k, v in config.weights.items():
-    #    weights[k] = v
-
     criterion = None
 
     if config.loss == 'wce':
         criterion = T.nn.CrossEntropyLoss(weight=weights.to(config.device), ignore_index=255).to(config.device)
+    elif config.loss == 'lovasz_softmax':
+        criterion = lambda input, target: L.lovasz_softmax(probas=input, labels=target, ignore=255)
+    else:
+        raise RuntimeError(f'Unknown loss function: {config.loss}')
 
     logger = config.run
 
@@ -149,7 +147,7 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
 
         predict = model(data)['out']
 
-        loss = L.lovasz_softmax(probas=predict, labels=labels, ignore=255)
+        loss = criterion(input=predict, target=labels)
 
         with T.no_grad():
             losses.append(loss.mean().item())
@@ -185,7 +183,7 @@ def val_step(model, val_loader, criterion, epoch, logger):
 
             predict = model(data)['out']
 
-            loss = L.lovasz_softmax(probas=predict, labels=labels, ignore=255)
+            loss = criterion(input=predict, target=labels)
 
             losses.append(loss.mean().item())
 
@@ -225,18 +223,21 @@ def val_step(model, val_loader, criterion, epoch, logger):
         logging.info(f'test.mean_iou: {mean_ious}')
         logger.log_scalar('test.mean_iou', mean_ious)
 
-        if False:
+        if True:
             imgs = masks.detach().cpu().numpy()
 
-            colormap = get_colormap(len(VALID_MASK_IDS))
+            colormap = get_colormap(20)
             # dump colored images
             for i in range(3):
                 img = imgs[i, :, :]
-
+                 
                 rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
-                colored_masks = np.hstack((rgb, colormap[img]))
+                label = batch['label'][i, ...].numpy()
+                label = np.repeat(np.expand_dims(label, 2), 3, axis=2)
+                
+                colored_masks = np.hstack((rgb, label, colormap[img]))
 
-                cv2.imwrite(f'./images/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
+                cv2.imwrite(f'./images1/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
 
     return np.mean(losses)
 
