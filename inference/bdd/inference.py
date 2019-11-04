@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 import cv2
-
+import numpy as np
 import tqdm
 
 import torch as T
@@ -13,14 +13,24 @@ from models.bdd.SemSeg import SemSeg as Model
 
 from data.bdd.bdd_sem_seg_dataset import build_augmentations, BDDSemSegTestDataset
 
-from utils.vis import get_colormap
+from utils.vis import get_colormap, blend_rgb_with_mask
 
+VALID_MASK_IDS = {
+    0: 'road',
+    1: 'sidewalk',
+    6: 'semaphore',
+    7: 'sign',
+    11: 'person',
+    13: 'car',
+    14: 'truck',
+    15: 'bus'
+}
 
 def init_dataloader(path):
     if isinstance(path, str):
         path = Path(path)
 
-    augmentations = build_augmentations(width=256, height=256)
+    augmentations = build_augmentations(width=320, height=180, resize_strategy='resize')
 
     test_aug = augmentations['test']
 
@@ -29,7 +39,7 @@ def init_dataloader(path):
     )
 
     test_loader = DataLoader(
-        test_dataset, batch_size=16, pin_memory=True
+        test_dataset, batch_size=16
     )
 
     return test_loader
@@ -39,18 +49,23 @@ def main(args):
     data_loader = init_dataloader(args.dataset)
 
     num_classes = 20
-    
-    model = Model(num_classes)
-
-    model.load_state_dict(T.load(args.checkpoint)['model_state_dict'])
 
     device = 'cpu'
+
+    model = Model(num_classes)
+
+    model.load_state_dict(T.load(args.checkpoint, map_location='cpu')['model_state_dict'])
 
     model.to(device)
 
     model.eval()
 
-    colormap = get_colormap()
+    colormap = get_colormap(num_classes)
+
+    print('colormap')
+
+    for idx, color in enumerate(colormap):
+        print(idx, color)
 
     output = args.output
 
@@ -66,7 +81,7 @@ def main(args):
         for idx, batch in enumerate(tqdm.tqdm(data_loader)):
             data = batch['img'].to(device)
 
-            predict = model(data)['out']
+            predict = model(data[0:2, :])['out']
 
             masks = T.argmax(predict, dim=1)
 
@@ -75,11 +90,25 @@ def main(args):
             indices = batch['idx']
 
             for i in range(imgs.shape[0]):
-                img = colormap[imgs[i, :, :]]
-
                 p = data_loader.dataset.images[indices[i]]
+                
+                rgb = cv2.imread(p.as_posix(), cv2.IMREAD_UNCHANGED)
 
-                cv2.imwrite((output / f'{p.name}').as_posix(), img, [cv2.IMREAD_UNCHANGED])
+                src_mask = imgs[i, :, :]
+
+                mask_to_draw = np.zeros_like(src_mask)
+
+                for valid_id in VALID_MASK_IDS.keys():
+                    mask_to_draw[src_mask == valid_id] = 1
+
+                mask_to_draw = np.repeat(np.expand_dims(mask_to_draw, 2), 3, axis=2)
+
+                img = colormap[src_mask] * mask_to_draw
+
+                img = cv2.resize(img.astype(np.uint8), (1280, 720), cv2.INTER_NEAREST)
+
+                blended = blend_rgb_with_mask(rgb, img)
+                cv2.imwrite((output / f'{p.name}').as_posix(), blended, [cv2.IMREAD_UNCHANGED])
 
             break
 

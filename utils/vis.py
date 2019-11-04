@@ -23,10 +23,12 @@ def get_colormap(max_class_id=256):
 
 
 def blend_rgb_with_mask(rgb, mask):
+    if rgb.shape != mask.shape:
+        raise RuntimeError(f'Mismatching shapes; {rgb.shape}, {mask.shape}')
+
     alpha = 0.4
     beta = 1.0 - alpha
-    gamma = 0.0
 
-    blended = cv2.addWeighted(rgb, alpha, mask, beta, gamma)
-    
+    blended = alpha * rgb + beta * mask
+
     return blended

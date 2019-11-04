@@ -34,45 +34,17 @@ ex = Experiment('bdd_sem_seg')
 
 ex.observers.append(MongoObserver.create())
 
-# writer = SummaryWriter(logdir='/home/sbykov/workspace/ml/runs/bdd')
-writer = None
-
 # ignore, moving car, parked car, person, semaphore, road
-#VALID_MASK_IDS = {
-#    0: 'road',
-#    1: 'sidewalk',
-#    6: 'semaphore',
-#    7: 'sign',
-#    11: 'person',
-#    13: 'car',
-#    14: 'truck',
-#    15: 'bus'
-#}
-
 VALID_MASK_IDS = {
     0: 'road',
-    1: 'semaphore',
-    2: 'sign',
-    3: 'person',
-    4: 'car'
+    1: 'sidewalk',
+    6: 'semaphore',
+    7: 'sign',
+    11: 'person',
+    13: 'car',
+    14: 'truck',
+    15: 'bus'
 }
-
-
-@ex.config
-def default():
-    trainer_config = { 
-        "dataset_path": "./processed",
-        "device": "cuda",
-        "num_classes": 8,
-        "height": 256,
-        "width": 256,
-        "epochs": 10,
-        "loss": "lovasz_softmax",
-        "resize_strategy": "crop",
-        "learning_rate": 1e-3,
-        "batch_size": 16,
-        "shuffle": True
-     }
 
 
 def train(config, loaders):
@@ -92,29 +64,53 @@ def train(config, loaders):
     criterion = None
 
     if config.loss == 'wce':
+        weights = T.ones((config.num_classes,)).float()
+
+        weights[1] = 5.0
+        weights[6] = 10.0
+        weights[7] = 10.0
+        weights[11] = 10.0
+        weights[14] = 5.0
+        weights[15] = 5.0
+
         criterion = T.nn.CrossEntropyLoss(weight=weights.to(config.device), ignore_index=255).to(config.device)
     elif config.loss == 'lovasz_softmax':
         criterion = lambda input, target: L.lovasz_softmax(probas=input, labels=target, ignore=255)
+    elif config.loss == 'mixed':
+        weights = T.ones((config.num_classes,)).float()
+
+        weights[1] = 5.0
+        weights[6] = 10.0
+        weights[7] = 10.0
+        weights[11] = 10.0
+        weights[14] = 5.0
+        weights[15] = 5.0
+
+        wce = T.nn.CrossEntropyLoss(weight=weights.to(config.device), ignore_index=255).to(config.device)
+   
+        lovasz = lambda input, target: L.lovasz_softmax(probas=input, labels=target, ignore=255)
+
+        criterion = lambda input, target: 1.25 * lovasz(input, target) + wce(input, target)
     else:
         raise RuntimeError(f'Unknown loss function: {config.loss}')
 
-    logger = config.run
+    run = config.manager.run
 
     best_score = 0
 
-    weights_path = Path('./weights')
+    weights_path = config.manager.weights
 
     if not weights_path.exists():
         weights_path.mkdir()
 
     main_bar = tqdm.tqdm(range(1, config.epochs + 1), desc='epoch')
     for epoch in main_bar:
-        train_loss = train_epoch(model, optimizer, criterion, train_loader, epoch, logger)
-        val_loss = val_step(model, val_loader, criterion, epoch, logger)
+        train_loss = train_epoch(model, optimizer, criterion, train_loader, epoch, config.manager)
+        val_loss = val_step(model, val_loader, criterion, epoch, config.manager)
 
         scheduler.step() 
 
-        logger.log_scalar('train.lr', scheduler.optimizer.param_groups[0]['lr'])
+        run.log_scalar('train.lr', scheduler.optimizer.param_groups[0]['lr'])
 
         if epoch % 5 == 0:
             model_name = f"./best_model_{epoch}_{str(val_loss).replace('.', 'd')}.pth"
@@ -132,7 +128,7 @@ def train(config, loaders):
         main_bar.set_postfix(val_loss=val_loss, train_loss=train_loss.item(), refresh=False)
 
 
-def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
+def train_epoch(model, optimizer, criterion, train_loader, epoch, manager):
     model.train()
 
     losses = []
@@ -158,15 +154,12 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, logger):
 
         optimizer.step()
 
-    if writer:
-        writer.add_scalar('train.cross_entropy', np.mean(losses), global_step=epoch)
-    else:
-        logger.log_scalar('train.cross_entropy', np.mean(losses))
+        manager.run.log_scalar('train.cross_entropy', np.mean(losses))
 
     return np.mean(losses)
 
 
-def val_step(model, val_loader, criterion, epoch, logger):
+def val_step(model, val_loader, criterion, epoch, manager):
     model.eval()
 
     losses = []
@@ -204,40 +197,40 @@ def val_step(model, val_loader, criterion, epoch, logger):
                     else:
                         metrics_values[metric_name].append(val)
 
-    if writer:
-        writer.add_scalar('val.accuracy', 100 * acc / total_samples, global_step=epoch)
-    else:
-        logger.log_scalar('val.cross_entropy', np.mean(losses))
+    manager.run.log_scalar('val.cross_entropy', np.mean(losses))
 
-        ious = []
-        for metric_name, vals in metrics_values.items():
-            logger.log_scalar(f'test.{metric_name}', np.mean(vals))
+    ious = []
+    for metric_name, vals in metrics_values.items():
+        manager.run.log_scalar(f'test.{metric_name}', np.mean(vals))
   
-            if '_iou' in metric_name:
-                m = np.mean(vals)
-                logging.info(f'test.{metric_name}: {m}')
+        if '_iou' in metric_name:
+            m = np.mean(vals)
+            logging.info(f'test.{metric_name}: {m}')
 
-                ious.append(m)
+            ious.append(m)
 
-        mean_ious = np.mean(ious)
-        logging.info(f'test.mean_iou: {mean_ious}')
-        logger.log_scalar('test.mean_iou', mean_ious)
+    mean_ious = np.mean(ious)
+    logging.info(f'test.mean_iou: {mean_ious}')
+    manager.run.log_scalar('test.mean_iou', mean_ious)
 
-        if True:
-            imgs = masks.detach().cpu().numpy()
+    if True:
+        imgs = masks.detach().cpu().numpy()
 
-            colormap = get_colormap(20)
-            # dump colored images
-            for i in range(3):
-                img = imgs[i, :, :]
+        colormap = get_colormap(20)
+        # dump colored images
+        for i in range(3):
+            img = imgs[i, :, :]
                  
-                rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
-                label = batch['label'][i, ...].numpy()
-                label = np.repeat(np.expand_dims(label, 2), 3, axis=2)
+            rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
+            label = batch['label'][i, ...].numpy()
+            label = np.repeat(np.expand_dims(label, 2), 3, axis=2)
                 
-                colored_masks = np.hstack((rgb, label, colormap[img]))
+            colored_masks = np.hstack((rgb, label, colormap[img]))
 
-                cv2.imwrite(f'./images1/{epoch}_{i}.png', colored_masks, [cv2.IMREAD_UNCHANGED])
+            cv2.imwrite(
+                (manager.artifacts / f'{epoch}_{i}.png').as_posix(),
+                colored_masks, [cv2.IMREAD_UNCHANGED]
+            )
 
     return np.mean(losses)
 
@@ -255,7 +248,8 @@ def ex_main(_run, trainer_config):
     from munch import Munch
     trainer_config = Munch(trainer_config)
 
-    trainer_config.run = _run
+    from core.manager import ExperimentManager
+    trainer_config.manager = ExperimentManager(trainer_config, _run)
 
     loaders = init_dataloaders(config=trainer_config)
 
