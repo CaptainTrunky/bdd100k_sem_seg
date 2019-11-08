@@ -46,6 +46,14 @@ VALID_MASK_IDS = {
     15: 'bus'
 }
 
+VALID_MASK_IDS = {
+    0: 'road',
+    1: 'semaphore',
+    2: 'sign',
+    3: 'person',
+    4: 'car',
+    5: 'background',
+}
 
 def train(config, loaders):
     train_loader = loaders['train']
@@ -57,7 +65,7 @@ def train(config, loaders):
 
     optimizer = Ranger(model.parameters(), lr=config.learning_rate)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20, 30, 40], gamma=0.1)
 
     model.to(config.device)
 
@@ -79,12 +87,10 @@ def train(config, loaders):
     elif config.loss == 'mixed':
         weights = T.ones((config.num_classes,)).float()
 
-        weights[1] = 5.0
-        weights[6] = 10.0
-        weights[7] = 10.0
-        weights[11] = 10.0
-        weights[14] = 5.0
-        weights[15] = 5.0
+        weights[1] = 10.0
+        weights[2] = 10.0
+        weights[3] = 8.0
+        weights[5] = 0.5
 
         wce = T.nn.CrossEntropyLoss(weight=weights.to(config.device), ignore_index=255).to(config.device)
    
@@ -104,6 +110,8 @@ def train(config, loaders):
         weights_path.mkdir()
 
     main_bar = tqdm.tqdm(range(1, config.epochs + 1), desc='epoch')
+
+    best_loss = 100000
     for epoch in main_bar:
         train_loss = train_epoch(model, optimizer, criterion, train_loader, epoch, config.manager)
         val_loss = val_step(model, val_loader, criterion, epoch, config.manager)
@@ -112,8 +120,10 @@ def train(config, loaders):
 
         run.log_scalar('train.lr', scheduler.optimizer.param_groups[0]['lr'])
 
-        if epoch % 5 == 0:
+        if val_loss < best_loss:
             model_name = f"./best_model_{epoch}_{str(val_loss).replace('.', 'd')}.pth"
+
+            best_loss = val_loss
 
             T.save(
                 {
@@ -154,7 +164,7 @@ def train_epoch(model, optimizer, criterion, train_loader, epoch, manager):
 
         optimizer.step()
 
-        manager.run.log_scalar('train.cross_entropy', np.mean(losses))
+        manager.run.log_scalar('train.loss', np.mean(losses))
 
     return np.mean(losses)
 
@@ -197,11 +207,11 @@ def val_step(model, val_loader, criterion, epoch, manager):
                     else:
                         metrics_values[metric_name].append(val)
 
-    manager.run.log_scalar('val.cross_entropy', np.mean(losses))
+    manager.run.log_scalar('test.loss', np.mean(losses), epoch)
 
     ious = []
     for metric_name, vals in metrics_values.items():
-        manager.run.log_scalar(f'test.{metric_name}', np.mean(vals))
+        manager.run.log_scalar(f'test.{metric_name}', np.mean(vals), epoch)
   
         if '_iou' in metric_name:
             m = np.mean(vals)
@@ -211,26 +221,30 @@ def val_step(model, val_loader, criterion, epoch, manager):
 
     mean_ious = np.mean(ious)
     logging.info(f'test.mean_iou: {mean_ious}')
-    manager.run.log_scalar('test.mean_iou', mean_ious)
+    manager.run.log_scalar('test.mean_iou', mean_ious, epoch)
 
     if True:
         imgs = masks.detach().cpu().numpy()
 
         colormap = get_colormap(20)
         # dump colored images
-        for i in range(3):
-            img = imgs[i, :, :]
-                 
-            rgb = (np.moveaxis(batch['img'][i, ...].numpy(), 0, 2) * 255.0).astype(np.uint8)
-            label = batch['label'][i, ...].numpy()
-            label = np.repeat(np.expand_dims(label, 2), 3, axis=2)
-                
-            colored_masks = np.hstack((rgb, label, colormap[img]))
+        img = np.hstack([imgs[i, :, :] for i in range(imgs.shape[0])])
+            
+        rgbs = batch['img'].numpy()
+        rgb = np.hstack([(np.moveaxis(rgbs[i, ...], 0, 2) * 255.0).astype(np.uint8) for i in range(rgbs.shape[0])])
 
-            cv2.imwrite(
-                (manager.artifacts / f'{epoch}_{i}.png').as_posix(),
-                colored_masks, [cv2.IMREAD_UNCHANGED]
-            )
+        labels = batch['label'].numpy()
+
+        label = np.hstack([labels[i, ...] for i in range(labels.shape[0])])
+
+        label = np.repeat(np.expand_dims(label, 2), 3, axis=2)
+                
+        colored_masks = np.vstack((rgb, label, colormap[img]))
+
+        cv2.imwrite(
+            (manager.artifacts / f'{epoch}.png').as_posix(),
+            colored_masks, [cv2.IMREAD_UNCHANGED]
+        )
 
     return np.mean(losses)
 
