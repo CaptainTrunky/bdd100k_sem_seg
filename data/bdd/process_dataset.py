@@ -76,7 +76,8 @@ def main(args):
  
             label = cv2.imread((labels / split.stem / label_id).as_posix(), cv2.IMREAD_UNCHANGED)
   
-            output_label = np.full(shape=label.shape, fill_value=255, dtype=np.uint8)
+            output_label = np.full(shape=label.shape, fill_value=len(args.valid_ids), dtype=np.uint8)
+            output_label[label == 255] = 255
 
             merged_id = -1 
             for idx, valid_id in enumerate(args.valid_ids):
