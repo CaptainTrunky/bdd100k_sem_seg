@@ -2,9 +2,12 @@ import logging
 from pathlib import Path
 import tqdm
 
-from albumentations import Compose, Resize, HorizontalFlip,\
-        RandomCrop, ToFloat, Normalize, RandomScale,\
-        RandomBrightnessContrast, OneOf, CropNonEmptyMaskIfExists
+from albumentations import (Compose, Resize, HorizontalFlip,
+        RandomCrop, ToFloat, Normalize, OneOf, RandomScale, ShiftScaleRotate,
+        Blur, OpticalDistortion, GridDistortion, HueSaturationValue,
+        IAAAdditiveGaussianNoise, GaussNoise, MotionBlur, MedianBlur,
+        IAAPiecewiseAffine, CLAHE, IAASharpen, IAAEmboss,
+        RandomBrightnessContrast)
 
 from albumentations.pytorch import ToTensor, ToTensorV2
 
@@ -34,10 +37,34 @@ def build_augmentations(width, height, resize_strategy):
     else:
         raise RuntimeError(f'Unknown resize strategy {resize_strategy}')
 
+    strong_aug = Compose([
+        OneOf([
+            IAAAdditiveGaussianNoise(),
+            GaussNoise(),
+            ], p=0.2),
+        OneOf([
+            MotionBlur(p=0.2),
+            MedianBlur(blur_limit=3, p=0.1),
+            Blur(blur_limit=3, p=0.1),
+            ], p=0.2),
+        ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, p=0.2),
+        OneOf([
+            OpticalDistortion(p=0.3),
+            GridDistortion(p=0.1),
+            IAAPiecewiseAffine(p=0.0),
+            ], p=0.2),
+        OneOf([
+            CLAHE(clip_limit=2),
+            IAASharpen(),
+            IAAEmboss(),
+            RandomBrightnessContrast(),
+            ], p=0.3),
+        HueSaturationValue(p=0.3),
+        ])
+
     train = Compose([
         HorizontalFlip(),
-        RandomScale(),
-        RandomBrightnessContrast(),
+        strong_aug,
         resize_strategy,
         basic_block
     ])
@@ -47,7 +74,7 @@ def build_augmentations(width, height, resize_strategy):
         build_basic_transform()
     ])
 
-    test = Compose([resize_strategy, basic_block])
+    test = basic_block
 
     return {'train': train, 'val': val, 'test': test}
 
@@ -160,6 +187,7 @@ class BDDSemSegDataset(Dataset):
             raise RuntimeError(f'failed to read {img_path.as_posix()}')
 
         img = cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         label_path = self.labels[idx]
 
@@ -200,6 +228,8 @@ class BDDSemSegTestDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.dataset_path / self.images[idx]
         img = cv2.imread(img_path.as_posix(), cv2.IMREAD_UNCHANGED).astype(np.uint8)
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if self.transform:
             transformed = self.transform(image=img)
