@@ -26,6 +26,15 @@ VALID_MASK_IDS = {
     15: 'bus'
 }
 
+VALID_MASK_IDS = {
+    0: 'road',
+    1: 'semaphore',
+    2: 'sign',
+    3: 'person',
+    4: 'car',
+    5: 'background',
+}
+
 def init_dataloader(path):
     if isinstance(path, str):
         path = Path(path)
@@ -39,7 +48,7 @@ def init_dataloader(path):
     )
 
     test_loader = DataLoader(
-        test_dataset, batch_size=16
+        test_dataset, batch_size=8
     )
 
     return test_loader
@@ -48,13 +57,16 @@ def init_dataloader(path):
 def main(args):
     data_loader = init_dataloader(args.dataset)
 
-    num_classes = 20
+    num_classes = 6
 
-    device = 'cpu'
+    device = 'cuda'
 
     model = Model(num_classes)
 
-    model.load_state_dict(T.load(args.checkpoint, map_location='cpu')['model_state_dict'])
+    if device == 'cpu':
+        model.load_state_dict(T.load(args.checkpoint, map_location='cpu')['model_state_dict'])
+    else:
+        model.load_state_dict(T.load(args.checkpoint)['model_state_dict'])
 
     model.to(device)
 
@@ -81,7 +93,7 @@ def main(args):
         for idx, batch in enumerate(tqdm.tqdm(data_loader)):
             data = batch['img'].to(device)
 
-            predict = model(data[0:2, :])['out']
+            predict = model(data)['out']
 
             masks = T.argmax(predict, dim=1)
 
@@ -99,18 +111,17 @@ def main(args):
                 mask_to_draw = np.zeros_like(src_mask)
 
                 for valid_id in VALID_MASK_IDS.keys():
+                    if valid_id == 5:
+                        continue
+
                     mask_to_draw[src_mask == valid_id] = 1
 
                 mask_to_draw = np.repeat(np.expand_dims(mask_to_draw, 2), 3, axis=2)
 
                 img = colormap[src_mask] * mask_to_draw
 
-                img = cv2.resize(img.astype(np.uint8), (1280, 720), cv2.INTER_NEAREST)
-
                 blended = blend_rgb_with_mask(rgb, img)
                 cv2.imwrite((output / f'{p.name}').as_posix(), blended, [cv2.IMREAD_UNCHANGED])
-
-            break
 
 
 if __name__ == '__main__':
