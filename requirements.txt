@@ -78,7 +78,7 @@ tabulate==0.8.3
 torch==1.1.0
 torchvision
 traitlets==4.3.2
-urllib3==1.24.3
+urllib3==1.26.5
 wcwidth==0.1.7
 websocket-client==0.56.0
 Werkzeug==0.15.4
