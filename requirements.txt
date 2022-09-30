@@ -39,7 +39,7 @@ itsdangerous==1.1.0
 jedi==0.13.3
 Jinja2==2.11.3
 jmespath==0.9.4
-joblib==0.13.2
+joblib==1.2.0
 jsonpickle==0.9.6
 MarkupSafe==1.1.1
 mleap==0.8.1
